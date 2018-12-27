@@ -9,6 +9,7 @@
 //
 //
 //changelog summary (last 3 chanes for older see github https://github.com/hibble/7seg_clock_GPS_WS2811B
+//v1.0 - V1. very basic and needs tidyingbut working
 //v0.1 - initial version pre alpha code.
 
 //--------------------------------
@@ -60,7 +61,7 @@ void update7segDisplay();
 void updateSerialMonitor();
 
 Scheduler runner;
-Task t1 (GPSMillis, TASK_FOREVER, &getGPSTime);
+//Task t1 (GPSMillis, TASK_FOREVER, &getGPSTime);
 Task t2 (DisplayMillis, TASK_FOREVER, &update7segDisplay);
 Task t3 (SerialDisplayMillis, TASK_FOREVER, &updateSerialMonitor);
 
@@ -123,10 +124,10 @@ void setup() {
 
   //get tasks setup and enabled
   runner.init();
-  runner.addTask(t1);
+ // runner.addTask(t1);
   runner.addTask(t2);
   runner.addTask(t3);
-  t1.enable();
+  // t1.enable();
   t2.enable();
   t3.enable();
   
