@@ -42,8 +42,8 @@ Adafruit_NeoPixel strip[] = { //here is the variable for the multiple strips for
 //--------------------------------
 //LED settings - UK colour used througout code not US spelling
 //--------------------------------
-const int ledbrightness = 40; //brightness for all pixels 0-255 range, 32 being dim
-int dispColour = 7; // set RGB led colour not cons so can change e.g green if gps time red if no gps signal etc...
+const int ledbrightness = 10; //brightness for all pixels 0-255 range, 10 being dim
+int dispColour = 1; // set RGB led colour not cons so can change e.g green if gps time red if no gps signal etc...
 
 
 //--------------------------------
