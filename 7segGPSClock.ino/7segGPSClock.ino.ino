@@ -163,16 +163,7 @@ void loop() {
 }
 //END void loop()
 /////////////////
-void getGPSTime()
-{
-  while (gps.available( gpsPort )) {
-    fix = gps.read();
-    //doSomeWork();
-    gpsPort.println("loop");
-  }
-}
-//END getGPSTime loop()
-/////////////////
+
 
 // Actually update the led strip 7 seg display.
 // task called periodically by TaskScheduler
