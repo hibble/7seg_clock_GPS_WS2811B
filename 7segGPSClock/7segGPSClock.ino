@@ -44,26 +44,26 @@ Adafruit_NeoPixel strip[] = { //here is the variable for the multiple strips for
 //LED settings - UK colour used througout code not US spelling
 //--------------------------------
 const int ledbrightness = 10; //brightness for all pixels 0-255 range, 10 being dim
-int dispColour = 1; // set RGB led colour not cons so can change e.g green if gps time red if no gps signal etc...
+int dispColour = 5; // set RGB led colour not cons so can change e.g green if gps time red if no gps signal etc...
 
 
 //--------------------------------
 //Tasks scedualing
 //--------------------------------
 // Task timer settings
-const int GPSMillis = 2000; //get GPS time every 2 sec (set to higher value once code is more meture e.g 1x evey 10min?)
-const int DisplayMillis = 2000; // update display every 10th of a second
-const int SerialDisplayMillis = 1000; // serial output update 1s intervals
-
-// task prototypes
-void getGPSTime();
-void update7segDisplay();
-void updateSerialMonitor();
-
-Scheduler runner;
-//Task t1 (GPSMillis, TASK_FOREVER, &getGPSTime);
-Task t2 (DisplayMillis, TASK_FOREVER, &update7segDisplay);
-Task t3 (SerialDisplayMillis, TASK_FOREVER, &updateSerialMonitor);
+//const int GPSMillis = 2000; //get GPS time every 2 sec (set to higher value once code is more meture e.g 1x evey 10min?)
+//const int DisplayMillis = 100; // update display every 10th of a second
+//const int SerialDisplayMillis = 1000; // serial output update 1s intervals
+//
+//// task prototypes
+//void getGPSTime();
+//void update7segDisplay();
+//void updateSerialMonitor();
+//
+//Scheduler runner;
+////Task t1 (GPSMillis, TASK_FOREVER, &getGPSTime);
+//Task t2 (DisplayMillis, TASK_FOREVER, &update7segDisplay);
+//Task t3 (SerialDisplayMillis, TASK_FOREVER, &updateSerialMonitor);
 
 //--------------------------------
 //Setup
@@ -116,20 +116,8 @@ void setup() {
 
   trace_header( DEBUG_PORT );
   DEBUG_PORT.flush();
-
-  gpsPort.begin( 9600 );
   //initialize serial for debugging and monotoring
-  //Serial.begin(9600); //neo-6m works on 9600. difrent gps may need other speeds
-  //Serial.println("GPSClock TEST");
-
-  //get tasks setup and enabled
-  runner.init();
-  // runner.addTask(t1);
-  runner.addTask(t2);
-  runner.addTask(t3);
-  // t1.enable();
-  t2.enable();
-  t3.enable();
+  gpsPort.begin( 9600 ); //neo-6m works on 9600. difrent gps may need other speeds
 
   //LEDStrip array setup
   for (int s = 0; s < 4; s++) { //s is number ofled strip digits in use.
@@ -142,7 +130,7 @@ void setup() {
   for (int t = 0; t < 4; t++) { // t is number ofled strip digits in use.
     digitWrite(t, 8, 0); //blank
     strip[t].show();
-    segLight(t, 7, dispColour); //
+    segLight(t, 7, 1);//dispColour); //start red untill gps time is avaliable
     strip[t].show();
   }
 
@@ -160,7 +148,8 @@ void loop() {
     fix = gps.read();
   }
   //run our update tasks
-  runner.execute();
+  //runner.execute();
+  update7segDisplay();
 }
 //END void loop()
 /////////////////
@@ -170,9 +159,9 @@ void loop() {
 // task called periodically by TaskScheduler
 void update7segDisplay() {
 
-  //check if we have a GPS fix/time
+  //check if we have a GPS fix/time if we do display it
   if (fix.valid.time) {
-    hours = fix.dateTime.hours; //probabkly better in gps loop
+    hours = fix.dateTime.hours;
     mins = fix.dateTime.minutes;
     int hoursTens = hours / 10; //get the tens place of the hour
     int hoursOnes = hours % 10; //get the ones place of the hour
@@ -197,16 +186,16 @@ void update7segDisplay() {
     strip[3].show();
     //debug
     trace_all( DEBUG_PORT, gps, fix );
-    Serial.print("Time:"); Serial.print(fix.dateTime.hours);
-    Serial.print(":"); Serial.println(fix.dateTime.minutes);
+    //    Serial.print("Time:"); Serial.print(fix.dateTime.hours);
+    //    Serial.print(":"); Serial.println(fix.dateTime.minutes);
   }
   else {
-    Serial.println("Time not ready");
-    
+    //Serial.println("Time not ready");
+    trace_all( DEBUG_PORT, gps, fix );
     //flash dashes as red till we have gps time
     for (int t = 0; t < 4; t++) { // t is number ofled strip digits in use.
       digitWrite(t, 8, 0); //blank
-      delay(400);
+      //delay(200);
       strip[t].show();
       segLight(t, 7, 1); //dispColour); //normal user colour overiden.
       strip[t].show();
