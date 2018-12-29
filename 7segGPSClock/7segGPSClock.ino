@@ -9,71 +9,103 @@
 //
 //
 //changelog summary (last 3 chanes for older see github https://github.com/hibble/7seg_clock_GPS_WS2811B
-//v1.0 - V1. very basic and needs tidyingbut working
+//v1.5 - Fully working GPS clock - 3 colour mode.
+//v1.0 - very basic and needs tidying but working.
 //v0.1 - initial version pre alpha code.
+
+//Future plans
+//  .dfx files for laser cutting the clock
+//  support auto summer time
+//  support night node e.g auto turn off display when no one is in building.
+//
 
 //--------------------------------
 //Imports and declarations
 //--------------------------------
-
 #include <Adafruit_NeoPixel.h>
 #include <TaskScheduler.h>
 #include <NMEAGPS.h>
 #include <GPSport.h>
 #include <Streamers.h>
 
+//--------------------------------
+//User changable settings - note: UK colour used througout code not US spelling
+//--------------------------------
+//  write to NeoPixel seven segments, colours:
+//  0 = off
+//  1 = red
+//  2 = green
+//  3 = blue
+//  4 = white
+//  5 = yellow
+//  6 = Random
+
+//settings ibn following block can be changes depending on user need e.g colour and brightness
+//  default is:
+//  red = no gps/time to show/starting up
+
+const int ledbrightness = 20; //  default 20 - brightness for all pixels 0-255 range.
+int fullGPSFixColour = 2;     //  Green = Full GPS Sync with multiple satlights.
+int partGPSFixColour = 5;     //  Yellow = time only/gps signal lost or not enouth satalights for full fix.
+int noGPSFixColour = 1;       //  red = starting up/no signal/no time to show.
+int centerDotsColour = 3;      //  blue
+//End of user settings
+//--------------------------------
+
 
 static NMEAGPS  gps;
 static gps_fix  fix;
 int hours = 0;
 int mins = 0;
+boolean TickTock = false; //used to pulse center dots evey time display is updated.
 
 #define NUMPIXELS 35 // number of LEDs in a strip forming a 7seg dispaly
 #define DIGITPIN1 4 //digit 0 hour1 position
 #define DIGITPIN2 5 //digit 1 hour2 position
 #define DIGITPIN3 6 //digit 2 minuet1 position
 #define DIGITPIN4 7 //digit 3 minuet2 position
-//#define DIGITPIN4 8 //digit 4 - 2 center dots
+#define DIGITPIN5 8 //digit 4 - 2 center dots
 
 Adafruit_NeoPixel strip[] = { //here is the variable for the multiple strips forming the clock display //may need 5th for center dots
   Adafruit_NeoPixel(NUMPIXELS, DIGITPIN1, NEO_GRB + NEO_KHZ800),
   Adafruit_NeoPixel(NUMPIXELS, DIGITPIN2, NEO_GRB + NEO_KHZ800),
   Adafruit_NeoPixel(NUMPIXELS, DIGITPIN3, NEO_GRB + NEO_KHZ800),
-  Adafruit_NeoPixel(NUMPIXELS, DIGITPIN4, NEO_GRB + NEO_KHZ800)
+  Adafruit_NeoPixel(NUMPIXELS, DIGITPIN4, NEO_GRB + NEO_KHZ800),
+  Adafruit_NeoPixel(NUMPIXELS, DIGITPIN5, NEO_GRB + NEO_KHZ800)
 };
-//--------------------------------
-//LED settings - UK colour used througout code not US spelling
-//--------------------------------
-const int ledbrightness = 20; //brightness for all pixels 0-255 range, 10 being dim
-int dispColour = 5; // set RGB led colour not cons so can change e.g green if gps time red if no gps signal etc...
 
 
 //--------------------------------
 //Tasks scedualing
 //--------------------------------
-// Task timer settings
-//const int GPSMillis = 2000; //get GPS time every 2 sec (set to higher value once code is more meture e.g 1x evey 10min?)
-//const int DisplayMillis = 100; // update display every 10th of a second
-//const int SerialDisplayMillis = 1000; // serial output update 1s intervals
-//
-//// task prototypes
-//void getGPSTime();
-//void update7segDisplay();
-//void updateSerialMonitor();
-//
-//Scheduler runner;
-////Task t1 (GPSMillis, TASK_FOREVER, &getGPSTime);
-//Task t2 (DisplayMillis, TASK_FOREVER, &update7segDisplay);
-//Task t3 (SerialDisplayMillis, TASK_FOREVER, &updateSerialMonitor);
+//Task timer settings
+const int DisplayMillis = 500; // update display every 1/2 of a second
+const int SerialDisplayMillis = 2000; // serial output update 2s intervals
+
+// task prototypes
+void getGPSTime();
+void update7segDisplay();
+void updateSerialMonitor();
+
+Scheduler runner;
+
+Task t1 (DisplayMillis, TASK_FOREVER, &update7segDisplay);
+Task t2 (SerialDisplayMillis, TASK_FOREVER, &updateSerialMonitor);
 
 //--------------------------------
 //Setup
 //--------------------------------
 void setup() {
-  // put your setup code here, to run once:
-  delay(2000); //needed for some arduinos casiuses exrea 2 second startup time not a issue for a clock
-  //while(!Serial); //for Leonardo & similar
-  DEBUG_PORT.begin(9600);
+  delay(2000); //needed for some arduinos serial to initilise,exrea 2 second startup time not a issue for a clock
+  // setup perodic tasks
+  runner.init();
+  runner.addTask(t1);
+  runner.addTask(t2);
+  t1.enable();
+  t2.enable();
+
+  //setup serial
+  DEBUG_PORT.begin(9600); //gps modual neo-6m is 9600 other gps moduals and difrent modes may need this adjusted.
   while (!DEBUG_PORT);
 
   DEBUG_PORT.print( F("NMEA.INO: started\n") );
@@ -120,45 +152,67 @@ void setup() {
   gpsPort.begin( 9600 ); //neo-6m works on 9600. difrent gps may need other speeds
 
   //LEDStrip array setup
-  for (int s = 0; s < 4; s++) { //s is number ofled strip digits in use.
+  for (int s = 0; s < 5; s++) { //s is number of led strip digits in use and center dots.
     strip[s].begin(); // Initialize pins for output
     strip[s].setBrightness(ledbrightness); //brightness 0-255
     strip[s].show();  // Turn all LEDs off
     delay(200);
   }
   //flash dashes till we have gps time
-  for (int t = 0; t < 4; t++) { // t is number ofled strip digits in use.
+  for (int t = 0; t < 4; t++) { // t is number of led strip digits in use.
     digitWrite(t, 8, 0); //blank
     strip[t].show();
-    segLight(t, 7, 1);//dispColour); //start red untill gps time is avaliable
+    segLight(t, 7, noGPSFixColour); //start red untill gps time is avaliable
     strip[t].show();
+    delay(400); //causes slight animation
   }
-
+  // bit of time so red dashes show for minimum time.
   delay(1000);
 }
 //END void setup() stage
-//////////////////
+//////////////////////////////////
 
 //--------------------------------
 //Main Loop
 //--------------------------------
 void loop() {
-  //main GPS code
+  //main GPS code - was unhappy running as a periodic task
   while (gps.available( gpsPort )) {
     fix = gps.read();
   }
   //run our update tasks
-  update7segDisplay();
+  runner.execute();
 }
 //END void loop()
-/////////////////
+//////////////////////////////////
 
 
 // Actually update the led strip 7 seg display.
 // task called periodically by TaskScheduler
 void update7segDisplay() {
-  if (fix.status == 3) {
-    //show green as full gps fix
+  if (fix.status == 3) { // check if we have a full GPS fix
+    hours = fix.dateTime.hours;
+    mins = fix.dateTime.minutes;
+    int hoursTens = hours / 10; //get the tens place of the hour
+    int hoursOnes = hours % 10; //get the ones place of the hour
+    int minsTens = mins / 10; //get the tens place of minutes
+    int minsOnes = mins % 10; //get the ones place of minutes
+
+    //colour set at start of file under usser settings.
+    digitWrite(0, minsOnes, fullGPSFixColour);
+    strip[0].show();
+    digitWrite(1, minsTens, fullGPSFixColour);
+    strip[1].show();
+    digitWrite(2, hoursOnes, fullGPSFixColour);
+    strip[2].show();
+    digitWrite(3, hoursTens, fullGPSFixColour);
+    strip[3].show();
+    updateTickTock(); // update center dots
+    //debug
+    //trace_all( DEBUG_PORT, gps, fix );
+  }
+  else if (fix.status == 0) // not a full gps fix but some data is avaliable
+    if (fix.valid.time) { //check if we have a GPS time if we do display it in yellow
       hours = fix.dateTime.hours;
       mins = fix.dateTime.minutes;
       int hoursTens = hours / 10; //get the tens place of the hour
@@ -166,336 +220,324 @@ void update7segDisplay() {
       int minsTens = mins / 10; //get the tens place of minutes
       int minsOnes = mins % 10; //get the ones place of minutes
 
-      //write to NeoPixel seven segments, colours:
-      //0 = off
-      //1 = red
-      //2 = green
-      //3 = blue
-      //4 = white
-      //5 =  yellow
-      //
-      digitWrite(0, minsOnes, 2);
+      //colour set at start of file under usser settings.
+      digitWrite(0, minsOnes, partGPSFixColour);
       strip[0].show();
-      digitWrite(1, minsTens, 2);
+      digitWrite(1, minsTens, partGPSFixColour);
       strip[1].show();
-      digitWrite(2, hoursOnes, 2);
+      digitWrite(2, hoursOnes, partGPSFixColour);
       strip[2].show();
-      digitWrite(3, hoursTens, 2);
+      digitWrite(3, hoursTens, partGPSFixColour);
       strip[3].show();
+      updateTickTock(); // update center dots
       //debug
-      trace_all( DEBUG_PORT, gps, fix );
+      //trace_all( DEBUG_PORT, gps, fix );
     }
-    else if (fix.status == 0)
-      //check if we have a GPS time if we do display it in yellow
-      if (fix.valid.time) {
-        hours = fix.dateTime.hours;
-        mins = fix.dateTime.minutes;
-        int hoursTens = hours / 10; //get the tens place of the hour
-        int hoursOnes = hours % 10; //get the ones place of the hour
-        int minsTens = mins / 10; //get the tens place of minutes
-        int minsOnes = mins % 10; //get the ones place of minutes
-
-        //write to NeoPixel seven segments, colours:
-        //0 = off
-        //1 = red
-        //2 = green
-        //3 = blue
-        //4 = white
-        //5 =  yellow
-        //
-        digitWrite(0, minsOnes, dispColour);
-        strip[0].show();
-        digitWrite(1, minsTens, dispColour);
-        strip[1].show();
-        digitWrite(2, hoursOnes, dispColour);
-        strip[2].show();
-        digitWrite(3, hoursTens, dispColour);
-        strip[3].show();
-        //debug
-        trace_all( DEBUG_PORT, gps, fix );
+    else { //no gps data avaliable
+      //show dashes as red till we have gps time
+      for (int t = 0; t < 4; t++) { // t is number ofled strip digits in use.
+        digitWrite(t, 8, 0); //blank
+        strip[t].show();
+        segLight(t, 7, noGPSFixColour);//normal user colour overiden.
+        strip[t].show();
       }
-      else {
-        //Serial.println("Time not ready");
-        trace_all( DEBUG_PORT, gps, fix );
-        //flash dashes as red till we have gps time
-        for (int t = 0; t < 4; t++) { // t is number ofled strip digits in use.
-          digitWrite(t, 8, 0); //blank
-          //delay(200);
-          strip[t].show();
-          segLight(t, 7, 1); //dispColour); //normal user colour overiden.
-          strip[t].show();
-        }
-      }
+      //debug
+      //Serial.println("Time not ready");
+      //trace_all( DEBUG_PORT, gps, fix );
+    }
 
 
+}
+//END void updateDisplay()
+//////////////////////////
+
+void updateTickTock() {
+  if (TickTock == true) { //dots on
+    digitWrite(4, 11, centerDotsColour); // 11 is patern for the dots
+    strip[4].show();
+  } else { //dots off
+    digitWrite(4, 0, centerDotsColour); // 0 is used as that patern turns off led 0and1 other leds used for 0 do not exist on this strip.
+    strip[4].show();
   }
-  //END void updateDisplay()
-  //////////////////////////
+  TickTock = !TickTock; // revers boolian state for next run.
+}
 
-  void updateSerialMonitor()
-  {
-    //some code here
+void updateSerialMonitor() {
+  //some code here
+  trace_all( DEBUG_PORT, gps, fix );
+}
+//END void loop()
+/////////////////
+
+// shamless copy of other code see github for ninjaTimer
+////////////////////////////////////////////////////////////////////////////////
+void digitWrite(int digit, int val, int col) {
+
+  //use this to light up a digit
+  //'digit' is which one (right to left, 0 indexed)
+  //'val' is the value to set on the digit
+  //'col' is the color to use, R,G,B or W
+  //example:
+  //        digitWrite(0, 4, 2);
+  //this would set the digit
+  //on the far right to a "4" in green.
+
+  /*
+    // Letters are the standard naming, numbers are based upon the wiring sequence
+
+            A 2
+       ----------
+      |          |
+      |          |
+    F 1 |          | B 3
+      |          |
+      |     G 7  |
+       ----------
+      |          |
+      |          |
+    E 6 |          | C 4
+      |          |
+      |     D 5  |
+       ----------    dp 8
+
+  */
+  //these are the numeric character definitions,
+  //if last argument is a 0, the segment is off
+  //segLight 8 is the 2 dots but is shared with others being the first 2 leds 0-1
+  if (val == 0) { // "0"
+    //segments A,B,C,D,E,F
+    segLight(digit, 1, col);
+    segLight(digit, 2, col);
+    segLight(digit, 3, col);
+    segLight(digit, 4, col);
+    segLight(digit, 5, col);
+    segLight(digit, 6, col);
+    segLight(digit, 7, 0);
+    segLight(digit, 8, 0);
   }
-  //END void loop()
-  /////////////////
-
-  // shamless copy of other code see github for ninjaTimer
-  ////////////////////////////////////////////////////////////////////////////////
-  void digitWrite(int digit, int val, int col) {
-
-    //use this to light up a digit
-    //'digit' is which one (right to left, 0 indexed)
-    //'val' is the value to set on the digit
-    //'col' is the color to use, R,G,B or W
-    //example:
-    //        digitWrite(0, 4, 2);
-    //this would set the digit
-    //on the far right to a "4" in green.
-
-    /*
-      // Letters are the standard naming, numbers are based upon the wiring sequence
-
-              A 2
-         ----------
-        |          |
-        |          |
-      F 1 |          | B 3
-        |          |
-        |     G 7  |
-         ----------
-        |          |
-        |          |
-      E 6 |          | C 4
-        |          |
-        |     D 5  |
-         ----------    dp 8
-
-    */
-    //these are the numeric character definitions,
-    //if last argument is a 0, the segment is off
-    if (val == 0) { // "0"
-      //segments A,B,C,D,E,F
-      segLight(digit, 1, col);
-      segLight(digit, 2, col);
-      segLight(digit, 3, col);
-      segLight(digit, 4, col);
-      segLight(digit, 5, col);
-      segLight(digit, 6, col);
-      segLight(digit, 7, 0);
-      segLight(digit, 8, col);
-    }
-    if (val == 1) { // "1"
-      //segments A,B,C,D,E,F
-      segLight(digit, 1, 0);
-      segLight(digit, 2, 0);
-      segLight(digit, 3, col);
-      segLight(digit, 4, col);
-      segLight(digit, 5, 0);
-      segLight(digit, 6, 0);
-      segLight(digit, 7, 0);
-      segLight(digit, 8, col);
-    }
-    if (val == 2) { // "2"
-      //segments A,B,C,D,E,F
-      segLight(digit, 1, 0);
-      segLight(digit, 2, col);
-      segLight(digit, 3, col);
-      segLight(digit, 4, 0);
-      segLight(digit, 5, col);
-      segLight(digit, 6, col);
-      segLight(digit, 7, col);
-      segLight(digit, 8, col);
-    }
-    if (val == 3) { // "3"
-      //segments A,B,C,D,E,F
-      segLight(digit, 1, 0);
-      segLight(digit, 2, col);
-      segLight(digit, 3, col);
-      segLight(digit, 4, col);
-      segLight(digit, 5, col);
-      segLight(digit, 6, 0);
-      segLight(digit, 7, col);
-      segLight(digit, 8, col);
-    }
-    if (val == 4) { // "4"
-      //segments A,B,C,D,E,F
-      segLight(digit, 1, col);
-      segLight(digit, 2, 0);
-      segLight(digit, 3, col);
-      segLight(digit, 4, col);
-      segLight(digit, 5, 0);
-      segLight(digit, 6, 0);
-      segLight(digit, 7, col);
-      segLight(digit, 8, col);
-    }
-    if (val == 5) { // "5"
-      //segments A,B,C,D,E,F
-      segLight(digit, 1, col);
-      segLight(digit, 2, col);
-      segLight(digit, 3, 0);
-      segLight(digit, 4, col);
-      segLight(digit, 5, col);
-      segLight(digit, 6, 0);
-      segLight(digit, 7, col);
-      segLight(digit, 8, col);
-    }
-    if (val == 6) { // "6"
-      //segments A,B,C,D,E,F
-      segLight(digit, 1, col);
-      segLight(digit, 2, col);
-      segLight(digit, 3, 0);
-      segLight(digit, 4, col);
-      segLight(digit, 5, col);
-      segLight(digit, 6, col);
-      segLight(digit, 7, col);
-      segLight(digit, 8, col);
-    }
-    if (val == 7) { // "7"
-      //segments A,B,C,D,E,F
-      segLight(digit, 1, 0);
-      segLight(digit, 2, col);
-      segLight(digit, 3, col);
-      segLight(digit, 4, col);
-      segLight(digit, 5, 0);
-      segLight(digit, 6, 0);
-      segLight(digit, 7, 0);
-      segLight(digit, 8, col);
-    }
-    if (val == 8) { // "8"
-      //segments A,B,C,D,E,F
-      segLight(digit, 1, col);
-      segLight(digit, 2, col);
-      segLight(digit, 3, col);
-      segLight(digit, 4, col);
-      segLight(digit, 5, col);
-      segLight(digit, 6, col);
-      segLight(digit, 7, col);
-      segLight(digit, 8, col);
-    }
-    if (val == 9) { // "9"
-      //segments A,B,C,D,E,F
-      segLight(digit, 1, col);
-      segLight(digit, 2, col);
-      segLight(digit, 3, col);
-      segLight(digit, 4, col);
-      segLight(digit, 5, col);
-      segLight(digit, 6, 0);
-      segLight(digit, 7, col);
-      segLight(digit, 8, col);
-    }
+  if (val == 1) { // "1"
+    //segments A,B,C,D,E,F
+    segLight(digit, 1, 0);
+    segLight(digit, 2, 0);
+    segLight(digit, 3, col);
+    segLight(digit, 4, col);
+    segLight(digit, 5, 0);
+    segLight(digit, 6, 0);
+    segLight(digit, 7, 0);
+    segLight(digit, 8, 0);
   }
-  //END void digitWrite(int digit, int val, int col)
-  ////////////////////////////////////////////////////////////////////////////////
+  if (val == 2) { // "2"
+    //segments A,B,C,D,E,F
+    segLight(digit, 1, 0);
+    segLight(digit, 2, col);
+    segLight(digit, 3, col);
+    segLight(digit, 4, 0);
+    segLight(digit, 5, col);
+    segLight(digit, 6, col);
+    segLight(digit, 7, col);
+    segLight(digit, 8, col);
+  }
+  if (val == 3) { // "3"
+    //segments A,B,C,D,E,F
+    segLight(digit, 1, 0);
+    segLight(digit, 2, col);
+    segLight(digit, 3, col);
+    segLight(digit, 4, col);
+    segLight(digit, 5, col);
+    segLight(digit, 6, 0);
+    segLight(digit, 7, col);
+    segLight(digit, 8, col);
+  }
+  if (val == 4) { // "4"
+    //segments A,B,C,D,E,F
+    segLight(digit, 1, col);
+    segLight(digit, 2, 0);
+    segLight(digit, 3, col);
+    segLight(digit, 4, col);
+    segLight(digit, 5, 0);
+    segLight(digit, 6, 0);
+    segLight(digit, 7, col);
+    segLight(digit, 8, col);
+  }
+  if (val == 5) { // "5"
+    //segments A,B,C,D,E,F
+    segLight(digit, 1, col);
+    segLight(digit, 2, col);
+    segLight(digit, 3, 0);
+    segLight(digit, 4, col);
+    segLight(digit, 5, col);
+    segLight(digit, 6, 0);
+    segLight(digit, 7, col);
+    //segLight(digit, 8, col);
+  }
+  if (val == 6) { // "6"
+    //segments A,B,C,D,E,F
+    segLight(digit, 1, col);
+    segLight(digit, 2, col);
+    segLight(digit, 3, 0);
+    segLight(digit, 4, col);
+    segLight(digit, 5, col);
+    segLight(digit, 6, col);
+    segLight(digit, 7, col);
+    //segLight(digit, 8, col);
+  }
+  if (val == 7) { // "7"
+    //segments A,B,C,D,E,F
+    segLight(digit, 1, 0);
+    segLight(digit, 2, col);
+    segLight(digit, 3, col);
+    segLight(digit, 4, col);
+    segLight(digit, 5, 0);
+    segLight(digit, 6, 0);
+    segLight(digit, 7, 0);
+    segLight(digit, 8, 0);
+  }
+  if (val == 8) { // "8"
+    //segments A,B,C,D,E,F
+    segLight(digit, 1, col);
+    segLight(digit, 2, col);
+    segLight(digit, 3, col);
+    segLight(digit, 4, col);
+    segLight(digit, 5, col);
+    segLight(digit, 6, col);
+    segLight(digit, 7, col);
+    segLight(digit, 8, col);
+  }
+  if (val == 9) { // "9"
+    //segments A,B,C,D,E,F
+    segLight(digit, 1, col);
+    segLight(digit, 2, col);
+    segLight(digit, 3, col);
+    segLight(digit, 4, col);
+    segLight(digit, 5, col);
+    segLight(digit, 6, 0);
+    segLight(digit, 7, col);
+    segLight(digit, 8, col);
+  }
+  if (val == 11) { // "2 center dots"
+    //segments A,B,C,D,E,F
+    segLight(digit, 1, 0);
+    segLight(digit, 2, 0);
+    segLight(digit, 3, 0);
+    segLight(digit, 4, 0);
+    segLight(digit, 5, 0);
+    segLight(digit, 6, 0);
+    segLight(digit, 7, 0);
+    segLight(digit, 8, col);
+  }
+}
+//END void digitWrite(int digit, int val, int col)
+//////////////////////////////////////////////////
 
 
-  ////////////////////////////////////////////////////////////////////////////////
-  void segLight(char digit, int seg, int col) {
+/////////////////////////////////////////////
+void segLight(char digit, int seg, int col) {
 
-    //'digit' picks which neopixel strip
-    //'seg' calls a segment
-    //'col' is color
+  //'digit' picks which neopixel strip
+  //'seg' calls a segment
+  //'col' is color
 
-    int color[3];
+  int color[3];
 
-    //color sets
-    if (col == 0) { //off
-      color[0] = {0};
-      color[1] = {0};
-      color[2] = {0};
-    }
-    if (col == 1) { //red
-      color[0] = {255};
-      color[1] = {0};
-      color[2] = {0};
-    }
-    if (col == 2) { //green
-      color[0] = {0};
-      color[1] = {255};
-      color[2] = {0};
-    }
-    if (col == 3) { //blue
-      color[0] = {0};
-      color[1] = {0};
-      color[2] = {255};
-    }
-    if (col == 4) { //white -- careful with this one, 3x power consumption
-      color[0] = {255};
-      color[1] = {255};
-      color[2] = {255};
-    }
-    if (col == 5) { //yellow
-      color[0] = {200};
-      color[1] = {120};
-      color[2] = {0};
-    }
-    if (col == 6) { //random
-      color[0] = {random(0, 255)};
-      color[1] = {random(0, 255)};;
-      color[2] = {random(0, 255)};
-    }
-    if (col == 7) { //purple
-      color[0] = {255};
-      color[1] = {255};;
-      color[2] = {0};
-    }
+  //color sets
+  if (col == 0) { //off
+    color[0] = {0};
+    color[1] = {0};
+    color[2] = {0};
+  }
+  if (col == 1) { //red
+    color[0] = {255};
+    color[1] = {0};
+    color[2] = {0};
+  }
+  if (col == 2) { //green
+    color[0] = {0};
+    color[1] = {255};
+    color[2] = {0};
+  }
+  if (col == 3) { //blue
+    color[0] = {0};
+    color[1] = {0};
+    color[2] = {255};
+  }
+  if (col == 4) { //white -- careful with this one, 3x power consumption
+    color[0] = {255};
+    color[1] = {255};
+    color[2] = {255};
+  }
+  if (col == 5) { //yellow
+    color[0] = {200};
+    color[1] = {120};
+    color[2] = {0};
+  }
+  if (col == 6) { //random  - gets lots of middle colurs nust be a better solution
+    color[0] = {random(0, 255)};
+    color[1] = {random(0, 255)};;
+    color[2] = {random(0, 255)};
+  }
+  if (col == 7) { //purple
+    color[0] = {255};
+    color[1] = {255};;
+    color[2] = {0};
+  }
 
 
-    //sets are 0-7,
-    //8-15, 16-23, 24-31, 32-39, 40-47, 48-55
+  //sets are 0-7,
+  //8-15, 16-23, 24-31, 32-39, 40-47, 48-55 //note number of leds willdepend on dencity of strip.
 
-    //seg F
-    //sets are f0-7, a8-15, b16-23, c24-31, d32-39, e40-47, g48-55, 56
-    //new5     f
-    //seg F
-    if (seg == 1) {
-      //light 15-19
-      for (int i = 15; i <= 19; i++) {
-        strip[digit].setPixelColor(i, color[0], color[1], color[2]);
-      }
-    }
-    //seg A
-    if (seg == 2) {
-      //light second 8
-      for (int i = 10; i <= 14; i++) {
-        strip[digit].setPixelColor(i, color[0], color[1], color[2]);
-      }
-    }
-    //seg B
-    if (seg == 3) {
-      for (int i = 5; i <= 9; i++) {
-        strip[digit].setPixelColor(i, color[0], color[1], color[2]);
-      }
-    }
-    //seg C
-    if (seg == 4) {
-      for (int i = 30; i <= 34; i++) {
-        strip[digit].setPixelColor(i, color[0], color[1], color[2]);
-      }
-    }
-    //seg D
-    if (seg == 5) {
-      for (int i = 25; i <= 29; i++) {
-        strip[digit].setPixelColor(i, color[0], color[1], color[2]);
-      }
-    }
-    //seg E
-    if (seg == 6) {
-      for (int i = 20; i <= 24; i++) {
-        strip[digit].setPixelColor(i, color[0], color[1], color[2]);
-      }
-    }
-    //seg G
-    if (seg == 7) {
-      for (int i = 0; i <= 4; i++) {
-        strip[digit].setPixelColor(i, color[0], color[1], color[2]);
-      }
-    }
-    //seg dp
-    if (seg == 8) {
-      for (int i = 56; i <= 57; i++) {
-        strip[digit].setPixelColor(i, color[0], color[1], color[2]);
-      }
+  //seg F
+  //sets are f0-7, a8-15, b16-23, c24-31, d32-39, e40-47, g48-55, 56
+  //new5     f
+  //seg F
+  if (seg == 1) {
+    //light 15-19
+    for (int i = 15; i <= 19; i++) {
+      strip[digit].setPixelColor(i, color[0], color[1], color[2]);
     }
   }
-  //END void segLight(char digit, int seg, int col)
-  ////////////////////////////////////////////////////////////////////////////////
+  //seg A
+  if (seg == 2) {
+    //light second 8
+    for (int i = 10; i <= 14; i++) {
+      strip[digit].setPixelColor(i, color[0], color[1], color[2]);
+    }
+  }
+  //seg B
+  if (seg == 3) {
+    for (int i = 5; i <= 9; i++) {
+      strip[digit].setPixelColor(i, color[0], color[1], color[2]);
+    }
+  }
+  //seg C
+  if (seg == 4) {
+    for (int i = 30; i <= 34; i++) {
+      strip[digit].setPixelColor(i, color[0], color[1], color[2]);
+    }
+  }
+  //seg D
+  if (seg == 5) {
+    for (int i = 25; i <= 29; i++) {
+      strip[digit].setPixelColor(i, color[0], color[1], color[2]);
+    }
+  }
+  //seg E
+  if (seg == 6) {
+    for (int i = 20; i <= 24; i++) {
+      strip[digit].setPixelColor(i, color[0], color[1], color[2]);
+    }
+  }
+  //seg G
+  if (seg == 7) {
+    for (int i = 0; i <= 4; i++) {
+      strip[digit].setPixelColor(i, color[0], color[1], color[2]);
+    }
+  }
+  //seg dp // 2 center dots for clock
+  if (seg == 8) {
+    for (int i = 0; i <= 1; i++) {
+      strip[digit].setPixelColor(i, color[0], color[1], color[2]);
+    }
+  }
+}
+//END void segLight(char digit, int seg, int col)
+/////////////////////////////////////////////////
