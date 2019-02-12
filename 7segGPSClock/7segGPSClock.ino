@@ -59,7 +59,7 @@ int hours = 0;
 int mins = 0;
 boolean TickTock = false; //used to pulse center dots evey time display is updated.
 
-#define NUMPIXELS 35 // number of LEDs in a strip forming a 7seg dispaly
+#define NUMPIXELS 140 // number of LEDs in a strip forming a 7seg dispaly
 #define DIGITPIN1 4 //digit 0 hour1 position
 #define DIGITPIN2 5 //digit 1 hour2 position
 #define DIGITPIN3 6 //digit 2 minuet1 position
@@ -483,7 +483,9 @@ void segLight(char digit, int seg, int col) {
 
 
   //sets are 0-7,
-  //8-15, 16-23, 24-31, 32-39, 40-47, 48-55 //note number of leds willdepend on dencity of strip.
+  //8-15, 16-23, 24-31, 32-39, 40-47, 48-55 
+  //sets are 0-19,
+  //20-39, 40-59, 60-79, 80-99, 100-119, 120-139 //note number of leds willdepend on dencity of strip.
 
   //seg F
   //sets are f0-7, a8-15, b16-23, c24-31, d32-39, e40-47, g48-55, 56
