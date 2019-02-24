@@ -63,7 +63,7 @@ boolean TickTock = false; //used to pulse center dots evey time display is updat
 #define DIGITPIN1 4 //digit 0 hour1 position
 #define DIGITPIN2 5 //digit 1 hour2 position
 #define DIGITPIN3 6 //digit 2 minuet1 position
-#define DIGITPIN4 7 //digit 3 minuet2 position
+#define DIGITPIN4 9 //digit 3 minuet2 position
 #define DIGITPIN5 8 //digit 4 - 2 center dots
 
 Adafruit_NeoPixel strip[] = { //here is the variable for the multiple strips forming the clock display //may need 5th for center dots
@@ -71,7 +71,7 @@ Adafruit_NeoPixel strip[] = { //here is the variable for the multiple strips for
   Adafruit_NeoPixel(NUMPIXELS, DIGITPIN2, NEO_GRB + NEO_KHZ800),
   Adafruit_NeoPixel(NUMPIXELS, DIGITPIN3, NEO_GRB + NEO_KHZ800),
   Adafruit_NeoPixel(NUMPIXELS, DIGITPIN4, NEO_GRB + NEO_KHZ800),
-  Adafruit_NeoPixel(NUMPIXELS, DIGITPIN5, NEO_GRB + NEO_KHZ800)
+  Adafruit_NeoPixel(2, DIGITPIN5, NEO_GRB + NEO_KHZ800)
 };
 
 
@@ -252,12 +252,15 @@ void update7segDisplay() {
 //////////////////////////
 
 void updateTickTock() {
+  //Serial.println("Time tock");
   if (TickTock == true) { //dots on
     digitWrite(4, 11, centerDotsColour); // 11 is patern for the dots
     strip[4].show();
+    Serial.println("Time tockon");
   } else { //dots off
     digitWrite(4, 0, centerDotsColour); // 0 is used as that patern turns off led 0and1 other leds used for 0 do not exist on this strip.
     strip[4].show();
+    Serial.println("Time tock off");
   }
   TickTock = !TickTock; // revers boolian state for next run.
 }
@@ -493,44 +496,44 @@ void segLight(char digit, int seg, int col) {
   //seg F
   if (seg == 1) {
     //light 15-19
-    for (int i = 15; i <= 19; i++) {
+    for (int i = 60; i <= 79; i++) {
       strip[digit].setPixelColor(i, color[0], color[1], color[2]);
     }
   }
   //seg A
   if (seg == 2) {
     //light second 8
-    for (int i = 10; i <= 14; i++) {
+    for (int i = 40; i <= 59; i++) {
       strip[digit].setPixelColor(i, color[0], color[1], color[2]);
     }
   }
   //seg B
   if (seg == 3) {
-    for (int i = 5; i <= 9; i++) {
+    for (int i = 20; i <= 39; i++) {
       strip[digit].setPixelColor(i, color[0], color[1], color[2]);
     }
   }
   //seg C
   if (seg == 4) {
-    for (int i = 30; i <= 34; i++) {
+    for (int i = 120; i <= 139; i++) {
       strip[digit].setPixelColor(i, color[0], color[1], color[2]);
     }
   }
   //seg D
   if (seg == 5) {
-    for (int i = 25; i <= 29; i++) {
+    for (int i = 100; i <= 119; i++) {
       strip[digit].setPixelColor(i, color[0], color[1], color[2]);
     }
   }
   //seg E
   if (seg == 6) {
-    for (int i = 20; i <= 24; i++) {
+    for (int i = 80; i <= 99; i++) {
       strip[digit].setPixelColor(i, color[0], color[1], color[2]);
     }
   }
   //seg G
   if (seg == 7) {
-    for (int i = 0; i <= 4; i++) {
+    for (int i = 0; i <= 19; i++) {
       strip[digit].setPixelColor(i, color[0], color[1], color[2]);
     }
   }
