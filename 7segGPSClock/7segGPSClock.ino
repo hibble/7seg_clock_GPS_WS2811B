@@ -44,7 +44,7 @@
 //  default is:
 //  red = no gps/time to show/starting up
 
-const int ledbrightness = 20; //  default 20 - brightness for all pixels 0-255 range.
+const int ledbrightness = 40; //  default 20 - brightness for all pixels 0-255 range.
 int fullGPSFixColour = 2;     //  Green = Full GPS Sync with multiple satlights.
 int partGPSFixColour = 5;     //  Yellow = time only/gps signal lost or not enouth satalights for full fix.
 int noGPSFixColour = 1;       //  red = starting up/no signal/no time to show.
@@ -63,7 +63,7 @@ boolean TickTock = false; //used to pulse center dots evey time display is updat
 #define DIGITPIN1 4 //digit 0 hour1 position
 #define DIGITPIN2 5 //digit 1 hour2 position
 #define DIGITPIN3 6 //digit 2 minuet1 position
-#define DIGITPIN4 9 //digit 3 minuet2 position
+#define DIGITPIN4 7 //digit 3 minuet2 position
 #define DIGITPIN5 8 //digit 4 - 2 center dots
 
 Adafruit_NeoPixel strip[] = { //here is the variable for the multiple strips forming the clock display //may need 5th for center dots
@@ -71,7 +71,7 @@ Adafruit_NeoPixel strip[] = { //here is the variable for the multiple strips for
   Adafruit_NeoPixel(NUMPIXELS, DIGITPIN2, NEO_GRB + NEO_KHZ800),
   Adafruit_NeoPixel(NUMPIXELS, DIGITPIN3, NEO_GRB + NEO_KHZ800),
   Adafruit_NeoPixel(NUMPIXELS, DIGITPIN4, NEO_GRB + NEO_KHZ800),
-  Adafruit_NeoPixel(2, DIGITPIN5, NEO_GRB + NEO_KHZ800)
+  Adafruit_NeoPixel(4, DIGITPIN5, NEO_GRB + NEO_KHZ800)
 };
 
 
@@ -539,7 +539,7 @@ void segLight(char digit, int seg, int col) {
   }
   //seg dp // 2 center dots for clock
   if (seg == 8) {
-    for (int i = 0; i <= 1; i++) {
+    for (int i = 0; i <= 3; i++) {
       strip[digit].setPixelColor(i, color[0], color[1], color[2]);
     }
   }
