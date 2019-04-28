@@ -66,6 +66,22 @@ boolean TickTock = false; //used to pulse center dots evey time display is updat
 #define DIGITPIN4 7 //digit 3 minuet2 position
 #define DIGITPIN5 8 //digit 4 - 2 center dots
 
+//#define EU_DST (bellow could be in if statments if multiple timezone support is needed)
+static const uint8_t springMonth =  3;
+static const uint8_t springDate  = 31; // latest last Sunday
+static const uint8_t springHour  =  1;
+static const uint8_t fallMonth   = 10;
+static const uint8_t fallDate    = 31; // latest last Sunday
+static const uint8_t fallHour    =  1;
+
+// Set these values to the offset of your timezone from GMT
+#define CALCULATE_DST
+static const int32_t          zone_hours   = 0L; // GMT(London)
+static const int32_t          zone_minutes = 0L; // usually zero
+static const NeoGPS::clock_t  zone_offset  =
+                                zone_hours   * NeoGPS::SECONDS_PER_HOUR +
+                                zone_minutes * NeoGPS::SECONDS_PER_MINUTE;
+
 Adafruit_NeoPixel strip[] = { //here is the variable for the multiple strips forming the clock display //may need 5th for center dots
   Adafruit_NeoPixel(NUMPIXELS, DIGITPIN1, NEO_GRB + NEO_KHZ800),
   Adafruit_NeoPixel(NUMPIXELS, DIGITPIN2, NEO_GRB + NEO_KHZ800),
@@ -179,6 +195,13 @@ void loop() {
   //main GPS code - was unhappy running as a periodic task
   while (gps.available( gpsPort )) {
     fix = gps.read();
+    //if we have A valid GPS time and Date Adjust for GMT offset and DST
+    if (fix.valid.time && fix.valid.date) {
+      adjustTime( fix.dateTime );
+      //for debuging could be removed
+      DEBUG_PORT << fix.dateTime;
+    }
+    DEBUG_PORT.println();
   }
   //run our update tasks
   runner.execute();
@@ -546,3 +569,52 @@ void segLight(char digit, int seg, int col) {
 }
 //END void segLight(char digit, int seg, int col)
 /////////////////////////////////////////////////
+
+/////////////////////////////////////////////////
+void adjustTime( NeoGPS::time_t & dt )
+{
+  NeoGPS::clock_t seconds = dt; // convert date/time structure to seconds
+
+  #ifdef CALCULATE_DST
+    //  Calculate DST changeover times once per reset and year!
+    static NeoGPS::time_t  changeover;
+    static NeoGPS::clock_t springForward, fallBack;
+
+    if ((springForward == 0) || (changeover.year != dt.year)) {
+
+      //  Calculate the spring changeover time (seconds)
+      changeover.year    = dt.year;
+      changeover.month   = springMonth;
+      changeover.date    = springDate;
+      changeover.hours   = springHour;
+      changeover.minutes = 0;
+      changeover.seconds = 0;
+      changeover.set_day();
+      // Step back to a Sunday, if day != SUNDAY
+      changeover.date -= (changeover.day - NeoGPS::time_t::SUNDAY);
+      springForward = (NeoGPS::clock_t) changeover;
+
+      //  Calculate the fall changeover time (seconds)
+      changeover.month   = fallMonth;
+      changeover.date    = fallDate;
+      changeover.hours   = fallHour - 1; // to account for the "apparent" DST +1
+      changeover.set_day();
+      // Step back to a Sunday, if day != SUNDAY
+      changeover.date -= (changeover.day - NeoGPS::time_t::SUNDAY);
+      fallBack = (NeoGPS::clock_t) changeover;
+    }
+  #endif
+
+  //  First, offset from UTC to the local timezone
+  seconds += zone_offset;
+
+  #ifdef CALCULATE_DST
+    //  Then add an hour if DST is in effect
+    if ((springForward <= seconds) && (seconds < fallBack))
+      seconds += NeoGPS::SECONDS_PER_HOUR;
+  #endif
+
+  dt = seconds; // convert seconds back to a date/time structure
+
+} // adjustTime
+//////////////////////////////////////////////////////////////
