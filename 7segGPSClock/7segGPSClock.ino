@@ -44,7 +44,7 @@
 //  default is:
 //  red = no gps/time to show/starting up
 
-const int ledbrightness = 40; //  default 20 - brightness for all pixels 0-255 range.
+const int ledbrightness = 60; //  default 20 - brightness for all pixels 0-255 range.
 int fullGPSFixColour = 2;     //  Green = Full GPS Sync with multiple satlights.
 int partGPSFixColour = 5;     //  Yellow = time only/gps signal lost or not enouth satalights for full fix.
 int noGPSFixColour = 1;       //  red = starting up/no signal/no time to show.
